@@ -173,17 +173,32 @@ async def get_heatmap(
         CrisisArea.longitude <= ne_lng + padding
     ).all()
 
-    # Generate grid points
-    lat_steps = int((ne_lat - sw_lat) * 111 / 1)  # 1km resolution
-    lon_steps = int((ne_lng - sw_lng) * 111 * np.cos(np.radians(sw_lat)) / 1)
+    # Calculate grid resolution based on viewport size
+    # Limit the number of points to prevent performance issues
+    MAX_POINTS = 1000
+    viewport_width_km = abs(ne_lng - sw_lng) * 111 * np.cos(np.radians((sw_lat + ne_lat) / 2))
+    viewport_height_km = abs(ne_lat - sw_lat) * 111
     
-    lat_vals = np.linspace(sw_lat, ne_lat, max(lat_steps, 2))
-    lon_vals = np.linspace(sw_lng, ne_lng, max(lon_steps, 2))
+    # Calculate steps to maintain reasonable point density
+    target_resolution = max(1, min(
+        viewport_width_km / np.sqrt(MAX_POINTS),
+        viewport_height_km / np.sqrt(MAX_POINTS)
+    ))
+    
+    lat_steps = min(int(viewport_height_km / target_resolution), 50)  # Cap at 50 steps
+    lon_steps = min(int(viewport_width_km / target_resolution), 50)  # Cap at 50 steps
+    
+    # Ensure minimum number of steps
+    lat_steps = max(lat_steps, 2)
+    lon_steps = max(lon_steps, 2)
+    
+    lat_vals = np.linspace(sw_lat, ne_lat, lat_steps)
+    lon_vals = np.linspace(sw_lng, ne_lng, lon_steps)
     
     points = []
     for lat in lat_vals:
         for lon in lon_vals:
-            intensity = calculate_intensity(lat, lon, crisis_areas, category)
+            intensity = calculate_intensity(float(lat), float(lon), crisis_areas, category)
             if intensity > 0:
                 points.append({
                     "lat": float(lat),

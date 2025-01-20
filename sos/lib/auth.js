@@ -58,10 +58,7 @@ class AuthService {
         Authorization: `Bearer ${token}`,
       };
 
-      // Ensure we're using relative URLs for API calls
-      const apiUrl = url.startsWith("/api/") ? url : `/api/${url}`;
-
-      const response = await fetch(apiUrl, {
+      const response = await fetch(url, {
         ...options,
         headers,
       });

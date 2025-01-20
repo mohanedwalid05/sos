@@ -140,6 +140,7 @@ function HeatmapUpdater({ bounds, selectedCategory, onDataUpdate }) {
         );
 
         if (!response.ok) {
+          console.log(response);
           const errorText = await response.text();
           throw new Error(
             errorText || `HTTP error! status: ${response.status}`
