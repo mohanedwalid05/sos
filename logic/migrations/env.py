@@ -1,30 +1,30 @@
 import os
 import sys
+from logging.config import fileConfig
 from pathlib import Path
+
+from sqlalchemy import engine_from_config
+from sqlalchemy import pool
+
+from alembic import context
 
 # Add the parent directory to the Python path
 sys.path.append(str(Path(__file__).parent.parent))
 
-from logging.config import fileConfig
-from sqlalchemy import engine_from_config
-from sqlalchemy import pool
-from alembic import context
-
-# Load our models
-from database import Base, NGO, CrisisArea, Donation, User
+# Import the SQLAlchemy models
+from models.database import Base, NGO, CrisisArea, Donation, User
+from settings import settings
 
 # this is the Alembic Config object
 config = context.config
-
-# Override sqlalchemy.url with environment variable if present
-if os.getenv("DATABASE_URL"):
-    config.set_main_option("sqlalchemy.url", os.getenv("DATABASE_URL"))
 
 # Interpret the config file for Python logging
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# Add your model's MetaData object here for 'autogenerate' support
+# Set the database URL in the alembic.ini file
+config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
+
 target_metadata = Base.metadata
 
 def run_migrations_offline() -> None:
@@ -50,7 +50,8 @@ def run_migrations_online() -> None:
 
     with connectable.connect() as connection:
         context.configure(
-            connection=connection, target_metadata=target_metadata
+            connection=connection, 
+            target_metadata=target_metadata
         )
 
         with context.begin_transaction():

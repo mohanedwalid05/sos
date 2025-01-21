@@ -1,32 +1,39 @@
-from fastapi import FastAPI, HTTPException, Depends, Security, Request
+from fastapi import FastAPI, HTTPException, Depends, Security, Request, WebSocket
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from typing import List, Optional, Dict
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, UTC
 import jwt as PyJWT
 from pydantic import BaseModel
 import numpy as np
 import os
 
-from database import get_db, NGO, CrisisArea, Donation, SupplyCategoryEnum, User
-from settings import JWT_EXPIRY_HOURS, HEATMAP_RADIUS_KM, HEATMAP_INTENSITY_SCALE
+from db import get_db
+from settings import settings
 from algorithm import AidMatchingAlgorithm
 from validation import validate_coordinates
+from models.types import (
+    SupplyCategory, Location, Supply, DonationStatus,
+    NGOBase, CrisisAreaBase, DonationBase
+)
+from models.database import NGO, CrisisArea, Donation, User
+from heatmap import HeatmapGenerator
 
+# Initialize FastAPI app
 app = FastAPI(
-    title="Crisis Aid Coordination API",
+    title="NGO Inter-Coordination API",
     docs_url="/docs",
     redoc_url="/redoc"
 )
 
 # Security
-SECRET_KEY = os.getenv('SECRET_KEY', "your-secret-key-here")
-ALGORITHM = "HS256"
+SECRET_KEY = os.getenv('SECRET_KEY', settings.JWT_SECRET_KEY)
+ALGORITHM = settings.JWT_ALGORITHM
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
 # CORS configuration
-origins = os.getenv('CORS_ORIGINS', 'http://localhost:3000').split(',')
+origins = os.getenv('CORS_ORIGINS', settings.CORS_ORIGINS).split(',')
 
 app.add_middleware(
     CORSMiddleware,
@@ -40,6 +47,12 @@ app.add_middleware(
 
 # Initialize algorithm
 algorithm = AidMatchingAlgorithm()
+
+# Initialize heatmap generator
+heatmap_generator = HeatmapGenerator()
+
+# WebSocket connections store
+active_connections: List[WebSocket] = []
 
 # Pydantic models
 class Token(BaseModel):
@@ -57,7 +70,7 @@ class CrisisAreaUpdate(BaseModel):
 
 # Authentication
 def create_token(data: dict) -> str:
-    expiry = datetime.utcnow() + timedelta(hours=JWT_EXPIRY_HOURS)
+    expiry = datetime.now(UTC) + timedelta(hours=settings.JWT_EXPIRY_HOURS)
     to_encode = data.copy()
     to_encode.update({"exp": expiry})
     return PyJWT.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
@@ -71,7 +84,7 @@ async def get_current_user(token: str = Depends(oauth2_scheme), db: Session = De
     try:
         payload = PyJWT.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         username: str = payload.get("sub")
-        if username is None:
+        if not username:
             raise credentials_exception
     except PyJWT.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token has expired")
@@ -99,18 +112,18 @@ def calculate_intensity(point_lat: float, point_lng: float, crisis_areas: List[C
         c = 2 * np.arctan2(np.sqrt(a), np.sqrt(1-a))
         distance = R * c
         
-        if distance > HEATMAP_RADIUS_KM:
+        if distance > settings.HEATMAP_RADIUS_KM:
             continue
             
         # Calculate base intensity from distance
-        distance_factor = 1 - (distance / HEATMAP_RADIUS_KM)
+        distance_factor = 1 - (distance / settings.HEATMAP_RADIUS_KM)
         
         # Calculate need intensity
         if category:
-            need_intensity = area.current_needs.get(category, 0) / HEATMAP_INTENSITY_SCALE
+            need_intensity = area.current_needs.get(category, 0) / settings.HEATMAP_INTENSITY_SCALE
             urgency = area.urgency_levels.get(category, 1) / 5
         else:
-            need_intensity = sum(area.current_needs.values()) / HEATMAP_INTENSITY_SCALE
+            need_intensity = sum(area.current_needs.values()) / settings.HEATMAP_INTENSITY_SCALE
             urgency = max(area.urgency_levels.values()) / 5 if area.urgency_levels else 0.2
         
         # Combine factors
@@ -150,6 +163,16 @@ async def login(
         print(f"Login error: {str(e)}")  # Debug logging
         raise
 
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    await websocket.accept()
+    active_connections.append(websocket)
+    try:
+        while True:
+            await websocket.receive_text()  # Keep connection alive
+    except:
+        active_connections.remove(websocket)
+
 @app.get("/heatmap")
 async def get_heatmap(
     sw_lat: float,
@@ -165,7 +188,7 @@ async def get_heatmap(
         raise HTTPException(status_code=400, detail="Invalid coordinates")
 
     # Get crisis areas within the bounding box with some padding
-    padding = HEATMAP_RADIUS_KM / 111  # Convert km to degrees (approximate)
+    padding = settings.HEATMAP_RADIUS_KM / 111  # Convert km to degrees (approximate)
     crisis_areas = db.query(CrisisArea).filter(
         CrisisArea.latitude >= sw_lat - padding,
         CrisisArea.latitude <= ne_lat + padding,
@@ -173,44 +196,35 @@ async def get_heatmap(
         CrisisArea.longitude <= ne_lng + padding
     ).all()
 
-    # Calculate grid resolution based on viewport size
-    # Limit the number of points to prevent performance issues
-    MAX_POINTS = 1000
-    viewport_width_km = abs(ne_lng - sw_lng) * 111 * np.cos(np.radians((sw_lat + ne_lat) / 2))
-    viewport_height_km = abs(ne_lat - sw_lat) * 111
-    
-    # Calculate steps to maintain reasonable point density
-    target_resolution = max(1, min(
-        viewport_width_km / np.sqrt(MAX_POINTS),
-        viewport_height_km / np.sqrt(MAX_POINTS)
-    ))
-    
-    lat_steps = min(int(viewport_height_km / target_resolution), 50)  # Cap at 50 steps
-    lon_steps = min(int(viewport_width_km / target_resolution), 50)  # Cap at 50 steps
-    
-    # Ensure minimum number of steps
-    lat_steps = max(lat_steps, 2)
-    lon_steps = max(lon_steps, 2)
-    
-    lat_vals = np.linspace(sw_lat, ne_lat, lat_steps)
-    lon_vals = np.linspace(sw_lng, ne_lng, lon_steps)
-    
-    points = []
-    for lat in lat_vals:
-        for lon in lon_vals:
-            intensity = calculate_intensity(float(lat), float(lon), crisis_areas, category)
-            if intensity > 0:
-                points.append({
-                    "lat": float(lat),
-                    "lng": float(lon),
-                    "intensity": float(intensity)
-                })
+    # Convert to domain models
+    crisis_areas = [
+        CrisisAreaBase(
+            id=area.id,
+            name=area.name,
+            location=Location(latitude=area.latitude, longitude=area.longitude),
+            current_needs=area.current_needs,
+            reachability=area.reachability,
+            weather_conditions=area.weather_conditions,
+            urgency_levels=area.urgency_levels,
+            population=area.population,
+            current_inventory=area.current_inventory,
+            road_conditions=area.road_conditions,
+            security_level=area.security_level,
+            nearest_supply_routes=[
+                Location(**route) for route in area.nearest_supply_routes
+            ]
+        )
+        for area in crisis_areas
+    ]
 
-    return {
-        "points": points,
-        "opacity": 0.6,
-        "radius": HEATMAP_RADIUS_KM * 1000  # Convert to meters for frontend
-    }
+    # Generate heatmap data
+    bounds = (
+        Location(latitude=sw_lat, longitude=sw_lng),
+        Location(latitude=ne_lat, longitude=ne_lng)
+    )
+    
+    selected_category = SupplyCategory(category) if category else None
+    return heatmap_generator.generate_heatmap_data(crisis_areas, bounds, selected_category)
 
 @app.get("/crisis-areas")
 async def get_crisis_areas(
@@ -322,6 +336,15 @@ async def update_ngo(
                 ngo.inventory[category] = supplies
                 
     db.commit()
+    
+    # Notify connected clients of the update
+    await notify_clients({
+        "type": "ngo_update",
+        "ngo_id": ngo_id,
+        "is_busy": ngo.is_busy,
+        "inventory": ngo.inventory
+    })
+    
     return {"status": "success"}
 
 @app.patch("/crisis-areas/{area_id}")
@@ -348,4 +371,14 @@ async def update_crisis_area(
         area.security_level = updates.security_level
         
     db.commit()
+    
+    # Notify connected clients of the update
+    await notify_clients({
+        "type": "crisis_area_update",
+        "area_id": area_id,
+        "current_needs": area.current_needs,
+        "weather_conditions": area.weather_conditions,
+        "security_level": area.security_level
+    })
+    
     return {"status": "success"} 

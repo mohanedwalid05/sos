@@ -1,14 +1,13 @@
-from database import (
-    init_db, SessionLocal, NGO, CrisisArea, Donation, User,
-    SupplyCategoryEnum, ReachabilityLevelEnum, SecurityLevelEnum, DonationStatusEnum
-)
+from datetime import datetime, timedelta
 import uuid
-from datetime import datetime, time, timedelta
+
+from db import SessionLocal
+from models.database import NGO, CrisisArea, Donation, User
+from models.types import SupplyCategory, ReachabilityLevel, SecurityLevel, DonationStatus
 
 def seed_database():
+    """Seed the database with initial data."""
     db = SessionLocal()
-    init_db()  # Create tables if they don't exist
-
     try:
         # Clear existing data
         db.query(Donation).delete()
@@ -41,29 +40,29 @@ def seed_database():
                 longitude=-118.2437,
                 reach_radius_km=1000.0,
                 inventory={
-                    SupplyCategoryEnum.FOOD.value: [
+                    SupplyCategory.FOOD.value: [
                         {"quantity": 1000, "unit": "kg", "expiry_date": "2024-12-31"},
                         {"quantity": 500, "unit": "kg", "expiry_date": "2024-06-30"}
                     ],
-                    SupplyCategoryEnum.WATER.value: [
+                    SupplyCategory.WATER.value: [
                         {"quantity": 5000, "unit": "liters", "expiry_date": None}
                     ],
-                    SupplyCategoryEnum.MEDICAL.value: [
+                    SupplyCategory.MEDICAL.value: [
                         {"quantity": 200, "unit": "boxes", "expiry_date": "2025-01-01"}
                     ]
                 },
                 replenishment_time_hours={
-                    SupplyCategoryEnum.FOOD.value: 48,
-                    SupplyCategoryEnum.WATER.value: 24,
-                    SupplyCategoryEnum.MEDICAL.value: 72
+                    SupplyCategory.FOOD.value: 48,
+                    SupplyCategory.WATER.value: 24,
+                    SupplyCategory.MEDICAL.value: 72
                 },
                 credibility_score=0.95,
                 rating=4.8,
                 total_donations=150,
                 response_time_hours=4.5,
                 specializations=[
-                    SupplyCategoryEnum.MEDICAL.value,
-                    SupplyCategoryEnum.FOOD.value
+                    SupplyCategory.MEDICAL.value,
+                    SupplyCategory.FOOD.value
                 ]
             ),
             NGO(
@@ -79,23 +78,23 @@ def seed_database():
                 longitude=-74.0060,
                 reach_radius_km=800.0,
                 inventory={
-                    SupplyCategoryEnum.MEDICAL.value: [
+                    SupplyCategory.MEDICAL.value: [
                         {"quantity": 1000, "unit": "boxes", "expiry_date": "2024-12-31"},
                         {"quantity": 500, "unit": "boxes", "expiry_date": "2024-06-30"}
                     ],
-                    SupplyCategoryEnum.HYGIENE.value: [
+                    SupplyCategory.HYGIENE.value: [
                         {"quantity": 2000, "unit": "kits", "expiry_date": None}
                     ]
                 },
                 replenishment_time_hours={
-                    SupplyCategoryEnum.MEDICAL.value: 48,
-                    SupplyCategoryEnum.HYGIENE.value: 72
+                    SupplyCategory.MEDICAL.value: 48,
+                    SupplyCategory.HYGIENE.value: 72
                 },
                 credibility_score=0.98,
                 rating=4.9,
                 total_donations=200,
                 response_time_hours=3.0,
-                specializations=[SupplyCategoryEnum.MEDICAL.value]
+                specializations=[SupplyCategory.MEDICAL.value]
             )
         ]
 
@@ -107,30 +106,30 @@ def seed_database():
                 latitude=18.5944,
                 longitude=-72.3074,
                 current_needs={
-                    SupplyCategoryEnum.MEDICAL.value: 1000,
-                    SupplyCategoryEnum.WATER.value: 5000,
-                    SupplyCategoryEnum.FOOD.value: 2000,
-                    SupplyCategoryEnum.SHELTER.value: 500
+                    SupplyCategory.MEDICAL.value: 1000,
+                    SupplyCategory.WATER.value: 5000,
+                    SupplyCategory.FOOD.value: 2000,
+                    SupplyCategory.SHELTER.value: 500
                 },
-                reachability=ReachabilityLevelEnum.DIFFICULT,
+                reachability=ReachabilityLevel.DIFFICULT,
                 weather_conditions="Tropical Storm Warning",
                 urgency_levels={
-                    SupplyCategoryEnum.MEDICAL.value: 5,
-                    SupplyCategoryEnum.WATER.value: 4,
-                    SupplyCategoryEnum.FOOD.value: 4,
-                    SupplyCategoryEnum.SHELTER.value: 3
+                    SupplyCategory.MEDICAL.value: 5,
+                    SupplyCategory.WATER.value: 4,
+                    SupplyCategory.FOOD.value: 4,
+                    SupplyCategory.SHELTER.value: 3
                 },
                 population=50000,
                 current_inventory={
-                    SupplyCategoryEnum.MEDICAL.value: [
+                    SupplyCategory.MEDICAL.value: [
                         {"quantity": 100, "unit": "boxes", "expiry_date": "2024-03-01"}
                     ],
-                    SupplyCategoryEnum.WATER.value: [
+                    SupplyCategory.WATER.value: [
                         {"quantity": 1000, "unit": "liters", "expiry_date": None}
                     ]
                 },
                 road_conditions="Partially blocked",
-                security_level=SecurityLevelEnum.CAUTION,
+                security_level=SecurityLevel.CAUTION,
                 nearest_supply_routes=[
                     {"latitude": 18.5945, "longitude": -72.3080},
                     {"latitude": 18.5940, "longitude": -72.3070}
@@ -142,27 +141,27 @@ def seed_database():
                 latitude=36.2021,
                 longitude=37.1343,
                 current_needs={
-                    SupplyCategoryEnum.MEDICAL.value: 2000,
-                    SupplyCategoryEnum.FOOD.value: 3000,
-                    SupplyCategoryEnum.SHELTER.value: 1000,
-                    SupplyCategoryEnum.HYGIENE.value: 1500
+                    SupplyCategory.MEDICAL.value: 2000,
+                    SupplyCategory.FOOD.value: 3000,
+                    SupplyCategory.SHELTER.value: 1000,
+                    SupplyCategory.HYGIENE.value: 1500
                 },
-                reachability=ReachabilityLevelEnum.EXTREME,
+                reachability=ReachabilityLevel.EXTREME,
                 weather_conditions="Clear",
                 urgency_levels={
-                    SupplyCategoryEnum.MEDICAL.value: 5,
-                    SupplyCategoryEnum.FOOD.value: 5,
-                    SupplyCategoryEnum.SHELTER.value: 4,
-                    SupplyCategoryEnum.HYGIENE.value: 3
+                    SupplyCategory.MEDICAL.value: 5,
+                    SupplyCategory.FOOD.value: 5,
+                    SupplyCategory.SHELTER.value: 4,
+                    SupplyCategory.HYGIENE.value: 3
                 },
                 population=75000,
                 current_inventory={
-                    SupplyCategoryEnum.FOOD.value: [
+                    SupplyCategory.FOOD.value: [
                         {"quantity": 500, "unit": "kg", "expiry_date": "2024-02-15"}
                     ]
                 },
                 road_conditions="Dangerous",
-                security_level=SecurityLevelEnum.EXTREME,
+                security_level=SecurityLevel.EXTREME,
                 nearest_supply_routes=[
                     {"latitude": 36.2025, "longitude": 37.1340},
                     {"latitude": 36.2020, "longitude": 37.1345}
@@ -183,18 +182,18 @@ def seed_database():
                 crisis_area_id=crisis_areas[0].id,
                 supplies=[
                     {
-                        "category": SupplyCategoryEnum.MEDICAL.value,
+                        "category": SupplyCategory.MEDICAL.value,
                         "quantity": 100,
                         "unit": "boxes"
                     },
                     {
-                        "category": SupplyCategoryEnum.WATER.value,
+                        "category": SupplyCategory.WATER.value,
                         "quantity": 1000,
                         "unit": "liters"
                     }
                 ],
                 timestamp=datetime.utcnow(),
-                status=DonationStatusEnum.DELIVERED
+                status=DonationStatus.DELIVERED
             ),
             Donation(
                 id=str(uuid.uuid4()),
@@ -202,18 +201,18 @@ def seed_database():
                 crisis_area_id=crisis_areas[1].id,
                 supplies=[
                     {
-                        "category": SupplyCategoryEnum.MEDICAL.value,
+                        "category": SupplyCategory.MEDICAL.value,
                         "quantity": 200,
                         "unit": "boxes"
                     },
                     {
-                        "category": SupplyCategoryEnum.HYGIENE.value,
+                        "category": SupplyCategory.HYGIENE.value,
                         "quantity": 500,
                         "unit": "kits"
                     }
                 ],
                 timestamp=datetime.utcnow(),
-                status=DonationStatusEnum.IN_TRANSIT
+                status=DonationStatus.IN_TRANSIT
             )
         ]
 

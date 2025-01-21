@@ -1,9 +1,11 @@
 from typing import List, Dict, Tuple
 from datetime import datetime
 import numpy as np
-from models import NGO, CrisisArea, Supply, SupplyCategory, Donation
-from settings import URGENCY_WEIGHT, DISTANCE_WEIGHT, REACHABILITY_WEIGHT
 import uuid
+
+from models.database import NGO, CrisisArea, Donation
+from models.types import Supply, SupplyCategory
+from settings import settings
 
 class AidMatchingAlgorithm:
     def __init__(self):
@@ -15,8 +17,8 @@ class AidMatchingAlgorithm:
         if cache_key in self.distance_cache:
             return self.distance_cache[cache_key]
             
-        lat1, lon1 = ngo.location.latitude, ngo.location.longitude
-        lat2, lon2 = crisis_area.location.latitude, crisis_area.location.longitude
+        lat1, lon1 = ngo.latitude, ngo.longitude
+        lat2, lon2 = crisis_area.latitude, crisis_area.longitude
         
         R = 6371  # Earth's radius in kilometers
         
@@ -87,9 +89,9 @@ class AidMatchingAlgorithm:
                 reachability_factor = 1 - (crisis_area.reachability.value / 4)  # Normalized to 0-1
                 
                 overall_score = (
-                    sum(supply_scores.values()) * URGENCY_WEIGHT +
-                    distance_factor * DISTANCE_WEIGHT +
-                    reachability_factor * REACHABILITY_WEIGHT
+                    sum(supply_scores.values()) * settings.MATCHING_WEIGHT_DISTANCE +
+                    distance_factor * settings.MATCHING_WEIGHT_INVENTORY +
+                    reachability_factor * settings.MATCHING_WEIGHT_RESPONSE_TIME
                 ) * ngo.credibility_score  # Weight by NGO credibility
                 
                 if overall_score > 0:
@@ -137,7 +139,7 @@ class AidMatchingAlgorithm:
                 crisis_area_id=crisis_area.id,
                 supplies=supplies,
                 timestamp=datetime.now(),
-                status="pending"
+                status=DonationStatus.PENDING
             )
             donations.append(donation)
         return donations

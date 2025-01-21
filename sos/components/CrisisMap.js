@@ -1,30 +1,19 @@
-import { useEffect, useState, useRef, useCallback } from "react";
-import {
-  MapContainer,
-  TileLayer,
-  Marker,
-  Popup,
-  useMap,
-  useMapEvents,
-} from "react-leaflet";
+import { useEffect, useRef, useState } from "react";
+import { MapContainer, TileLayer, useMap, Marker, Popup } from "react-leaflet";
 import L from "leaflet";
-import "leaflet/dist/leaflet.css";
 import "leaflet.heat";
 import AuthService from "../lib/auth";
 
-// Fix for default markers in react-leaflet
-delete L.Icon.Default.prototype._getIconUrl;
+// Update marker icons
 L.Icon.Default.mergeOptions({
   iconRetinaUrl: "/icons/marker-icon-2x.png",
   iconUrl: "/icons/marker-icon.png",
   shadowUrl: "/icons/marker-shadow.png",
 });
 
-// Custom marker icons
 const crisisIcon = new L.Icon({
   iconUrl: "/icons/crisis-marker.png",
   iconRetinaUrl: "/icons/crisis-marker-2x.png",
-  shadowUrl: "/icons/marker-shadow.png",
   iconSize: [25, 41],
   iconAnchor: [12, 41],
   popupAnchor: [1, -34],
@@ -34,17 +23,19 @@ const crisisIcon = new L.Icon({
 const ngoIcon = new L.Icon({
   iconUrl: "/icons/ngo-marker.png",
   iconRetinaUrl: "/icons/ngo-marker-2x.png",
-  shadowUrl: "/icons/marker-shadow.png",
   iconSize: [25, 41],
   iconAnchor: [12, 41],
   popupAnchor: [1, -34],
   shadowSize: [41, 41],
 });
 
-// Map bounds updater component
 function BoundsUpdater({ onBoundsChange }) {
-  const map = useMapEvents({
-    moveend: () => {
+  const map = useMap();
+
+  useEffect(() => {
+    if (!map) return;
+
+    const updateBounds = () => {
       const bounds = map.getBounds();
       onBoundsChange({
         sw: {
@@ -56,70 +47,126 @@ function BoundsUpdater({ onBoundsChange }) {
           lng: bounds.getEast(),
         },
       });
-    },
-  });
-  return null;
-}
+    };
 
-// Heatmap component
-function HeatmapLayer({ points }) {
-  const map = useMap();
-  const heatLayerRef = useRef(null);
-
-  useEffect(() => {
-    if (!map) return;
-
-    // Remove existing heatmap layer if it exists
-    if (heatLayerRef.current) {
-      map.removeLayer(heatLayerRef.current);
-    }
-
-    // Create new heatmap layer if there are points
-    if (points && points.length > 0) {
-      const heatData = points.map((point) => [
-        point.lat,
-        point.lng,
-        point.intensity,
-      ]);
-
-      heatLayerRef.current = L.heatLayer(heatData, {
-        radius: 25,
-        blur: 15,
-        maxZoom: 10,
-        max: 1.0,
-        minOpacity: 0.3,
-      }).addTo(map);
-    }
+    map.on("moveend", updateBounds);
+    updateBounds(); // Initial bounds
 
     return () => {
-      if (heatLayerRef.current) {
-        map.removeLayer(heatLayerRef.current);
-      }
+      map.off("moveend", updateBounds);
     };
-  }, [map, points]);
+  }, [map, onBoundsChange]);
 
   return null;
 }
 
-// Heatmap data fetcher component
-function HeatmapUpdater({ bounds, selectedCategory, onDataUpdate }) {
-  const [error, setError] = useState(null);
-  const abortControllerRef = useRef(null);
+const HeatmapLayer = ({ points, gradient }) => {
+  const map = useMap();
+  const heatmapRef = useRef(null);
 
   useEffect(() => {
-    // Cancel any previous request
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
+    if (!map || !points || points.length === 0) return;
+
+    // Create heatmap data
+    const data = {
+      max: 1.0,
+      data: points.map((point) => ({
+        lat: point.lat,
+        lng: point.lng,
+        value: point.intensity,
+        // Use satisfaction level to determine color
+        satisfaction: point.satisfaction,
+      })),
+    };
+
+    // Initialize heatmap if it doesn't exist
+    if (!heatmapRef.current) {
+      const heatmapConfig = {
+        radius: 25,
+        maxOpacity: 0.6,
+        minOpacity: 0.1,
+        blur: 0.75,
+        gradient: gradient,
+        // Custom color function to use satisfaction level
+        valueToColor: function (value, point) {
+          const satisfaction = point.satisfaction || 0;
+          // Find the closest gradient stops
+          const stops = Object.keys(gradient)
+            .map(Number)
+            .sort((a, b) => a - b);
+          let lower = stops[0],
+            upper = stops[stops.length - 1];
+
+          for (let i = 0; i < stops.length - 1; i++) {
+            if (satisfaction >= stops[i] && satisfaction <= stops[i + 1]) {
+              lower = stops[i];
+              upper = stops[i + 1];
+              break;
+            }
+          }
+
+          // Interpolate between colors
+          const ratio = (satisfaction - lower) / (upper - lower);
+          const lowerColor = gradient[lower].match(/\d+/g).map(Number);
+          const upperColor = gradient[upper].match(/\d+/g).map(Number);
+
+          const r = Math.round(
+            lowerColor[0] + (upperColor[0] - lowerColor[0]) * ratio
+          );
+          const g = Math.round(
+            lowerColor[1] + (upperColor[1] - lowerColor[1]) * ratio
+          );
+          const b = Math.round(
+            lowerColor[2] + (upperColor[2] - lowerColor[2]) * ratio
+          );
+
+          return `rgb(${r},${g},${b})`;
+        },
+      };
+
+      heatmapRef.current = new HeatmapOverlay(heatmapConfig);
+      heatmapRef.current.addTo(map);
     }
 
-    // Create new controller for this request
-    abortControllerRef.current = new AbortController();
-    let isMounted = true;
+    // Update heatmap data
+    heatmapRef.current.setData(data);
+  }, [map, points, gradient]);
+
+  return null;
+};
+
+function WebSocketConnection({ onUpdate }) {
+  useEffect(() => {
+    const ws = new WebSocket(`ws://${window.location.hostname}:8000/ws`);
+
+    ws.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+      onUpdate(data);
+    };
+
+    ws.onerror = (error) => {
+      console.error("WebSocket error:", error);
+    };
+
+    return () => {
+      ws.close();
+    };
+  }, [onUpdate]);
+
+  return null;
+}
+
+function HeatmapUpdater({ bounds, selectedCategory, onDataUpdate }) {
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    if (!bounds) return;
+
+    const controller = new AbortController();
 
     const fetchHeatmapData = async () => {
       try {
-        if (!bounds || !bounds.sw || !bounds.ne) return;
-
+        setError(null);
         const params = new URLSearchParams({
           sw_lat: bounds.sw.lat.toFixed(6),
           sw_lng: bounds.sw.lng.toFixed(6),
@@ -127,7 +174,6 @@ function HeatmapUpdater({ bounds, selectedCategory, onDataUpdate }) {
           ne_lng: bounds.ne.lng.toFixed(6),
         });
 
-        // Only add category if it's not null
         if (selectedCategory) {
           params.append("category", selectedCategory);
         }
@@ -135,189 +181,161 @@ function HeatmapUpdater({ bounds, selectedCategory, onDataUpdate }) {
         const response = await AuthService.fetchWithAuth(
           `/api/heatmap?${params}`,
           {
-            signal: abortControllerRef.current.signal,
+            signal: controller.signal,
           }
         );
 
         if (!response.ok) {
-          console.log(response);
-          const errorText = await response.text();
-          throw new Error(
-            errorText || `HTTP error! status: ${response.status}`
-          );
+          const text = await response.text();
+          throw new Error(text || "Failed to fetch heatmap data");
         }
 
         const data = await response.json();
-        if (isMounted) {
-          onDataUpdate(data);
-          setError(null);
-        }
-      } catch (error) {
-        // Only log and set errors that aren't from aborting
-        if (error.name !== "AbortError" && isMounted) {
-          console.error("Error fetching heatmap data:", error);
-          setError(error.message);
-          // Clear heatmap data on error
-          onDataUpdate({ points: [] });
-        }
+        onDataUpdate(data);
+      } catch (err) {
+        if (err.name === "AbortError") return;
+        console.error("Error fetching heatmap data:", err);
+        setError(err.message);
+        onDataUpdate({ points: [] }); // Clear heatmap on error
       }
     };
 
     fetchHeatmapData();
 
     return () => {
-      isMounted = false;
-      if (abortControllerRef.current) {
-        abortControllerRef.current.abort();
-      }
+      controller.abort();
     };
   }, [bounds, selectedCategory, onDataUpdate]);
 
-  return error ? (
-    <div
-      style={{
-        position: "absolute",
-        bottom: "20px",
-        left: "20px",
-        zIndex: 1000,
-        backgroundColor: "#f44336",
-        color: "white",
-        padding: "10px",
-        borderRadius: "4px",
-        boxShadow: "0 2px 4px rgba(0,0,0,0.2)",
-      }}
-    >
-      Error: {error}
-    </div>
-  ) : null;
+  if (error) {
+    return (
+      <div
+        style={{
+          position: "absolute",
+          top: 10,
+          left: "50%",
+          transform: "translateX(-50%)",
+          zIndex: 1000,
+          backgroundColor: "#f44336",
+          color: "white",
+          padding: "6px 16px",
+          borderRadius: 4,
+          boxShadow: "0 2px 4px rgba(0,0,0,0.2)",
+        }}
+      >
+        {error}
+      </div>
+    );
+  }
+
+  return null;
 }
 
 export default function CrisisMap({
-  crisisAreas = [],
-  ngos = [],
+  crisisAreas,
+  ngos,
   selectedCategory,
   onBoundsChange,
 }) {
-  const [heatmapData, setHeatmapData] = useState({ points: [] });
   const [mapBounds, setMapBounds] = useState(null);
+  const [heatmapData, setHeatmapData] = useState({ points: [], gradient: {} });
   const [center, setCenter] = useState([0, 0]);
 
-  // Update center based on first crisis area or default to [0, 0]
   useEffect(() => {
-    if (crisisAreas.length > 0 && crisisAreas[0].position) {
-      setCenter([crisisAreas[0].position.lat, crisisAreas[0].position.lng]);
+    // Set initial center to first crisis area or default
+    if (crisisAreas && crisisAreas.length > 0) {
+      const firstArea = crisisAreas[0];
+      setCenter([firstArea.position.lat, firstArea.position.lng]);
+    } else {
+      setCenter([0, 0]);
     }
   }, [crisisAreas]);
 
-  const handleBoundsChange = useCallback(
-    (bounds) => {
-      setMapBounds(bounds);
-      onBoundsChange?.(bounds);
-    },
-    [onBoundsChange]
-  );
-
-  const handleHeatmapData = useCallback((data) => {
-    setHeatmapData(data);
-  }, []);
+  const handleWebSocketUpdate = (data) => {
+    // Trigger a heatmap refresh when relevant data changes
+    if (
+      data.type === "crisis_area_update" ||
+      (data.type === "ngo_update" && data.is_busy !== undefined)
+    ) {
+      if (mapBounds) {
+        // Re-fetch heatmap data
+        setMapBounds({ ...mapBounds });
+      }
+    }
+  };
 
   return (
     <MapContainer
       center={center}
       zoom={3}
       style={{ height: "100%", width: "100%" }}
-      whenReady={(mapInstance) => {
-        const bounds = mapInstance.target.getBounds();
-        handleBoundsChange({
-          sw: {
-            lat: bounds.getSouth(),
-            lng: bounds.getWest(),
-          },
-          ne: {
-            lat: bounds.getNorth(),
-            lng: bounds.getEast(),
-          },
-        });
-      }}
     >
       <TileLayer
         attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
       />
+      <BoundsUpdater onBoundsChange={setMapBounds} />
+      <HeatmapUpdater
+        bounds={mapBounds}
+        selectedCategory={selectedCategory}
+        onDataUpdate={setHeatmapData}
+      />
+      <HeatmapLayer
+        points={heatmapData.points}
+        gradient={heatmapData.gradient}
+      />
+      <WebSocketConnection onUpdate={handleWebSocketUpdate} />
 
-      <HeatmapLayer points={heatmapData.points} />
-
-      {crisisAreas.map((area) => (
+      {crisisAreas?.map((area) => (
         <Marker
           key={area.id}
           position={[area.position.lat, area.position.lng]}
           icon={crisisIcon}
         >
           <Popup>
-            <div className="crisis-popup">
+            <div>
               <h3>{area.name}</h3>
-              <p>Urgency: {area.urgency?.toFixed(1) || 0}/5</p>
-              <p>Population: {area.population?.toLocaleString() || 0}</p>
-              <p>Security: {area.security || "Unknown"}</p>
-              <div className="needs">
-                <h4>Needs:</h4>
-                <ul>
-                  {Object.entries(area.needs || {}).map(
-                    ([category, amount]) => (
-                      <li key={category}>
-                        {category}: {amount}
-                      </li>
-                    )
-                  )}
-                </ul>
-              </div>
+              <p>Population: {area.population.toLocaleString()}</p>
+              <p>Security: {area.security}</p>
+              <p>Weather: {area.weather_conditions}</p>
+              <h4>Current Needs:</h4>
+              <ul>
+                {Object.entries(area.needs).map(([category, amount]) => (
+                  <li key={category}>
+                    {category}: {amount}
+                  </li>
+                ))}
+              </ul>
             </div>
           </Popup>
         </Marker>
       ))}
 
-      {ngos.map((ngo) => (
+      {ngos?.map((ngo) => (
         <Marker
           key={ngo.id}
           position={[ngo.location.latitude, ngo.location.longitude]}
           icon={ngoIcon}
         >
           <Popup>
-            <div className="ngo-popup">
+            <div>
               <h3>{ngo.name}</h3>
               <p>Status: {ngo.is_busy ? "Busy" : "Available"}</p>
-              <p>Rating: {ngo.rating?.toFixed(1) || 0}/5</p>
-              <div className="inventory">
-                <h4>Inventory:</h4>
-                <ul>
-                  {Object.entries(ngo.inventory || {}).map(
-                    ([category, supplies]) => (
-                      <li key={category}>
-                        {category}:{" "}
-                        {Array.isArray(supplies)
-                          ? supplies.reduce(
-                              (sum, s) => sum + (s.quantity || 0),
-                              0
-                            )
-                          : 0}
-                      </li>
-                    )
-                  )}
-                </ul>
-              </div>
+              <p>Rating: {ngo.rating.toFixed(1)}/5.0</p>
+              <p>Response Time: {ngo.response_time_hours}h</p>
+              <h4>Inventory:</h4>
+              <ul>
+                {Object.entries(ngo.inventory).map(([category, supplies]) => (
+                  <li key={category}>
+                    {category}:{" "}
+                    {supplies.reduce((sum, s) => sum + s.quantity, 0)} units
+                  </li>
+                ))}
+              </ul>
             </div>
           </Popup>
         </Marker>
       ))}
-
-      <BoundsUpdater onBoundsChange={handleBoundsChange} />
-      {mapBounds && (
-        <HeatmapUpdater
-          bounds={mapBounds}
-          selectedCategory={selectedCategory}
-          onDataUpdate={handleHeatmapData}
-        />
-      )}
     </MapContainer>
   );
 }

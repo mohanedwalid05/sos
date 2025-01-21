@@ -1,8 +1,8 @@
 from typing import Dict, List, Optional
-from datetime import datetime
+from datetime import datetime, time
 import re
 from pydantic import BaseModel, validator, constr
-from models import SupplyCategory, ReachabilityLevel
+from models.types import SupplyCategory, ReachabilityLevel
 
 class ValidationError(Exception):
     pass
@@ -126,12 +126,8 @@ def sanitize_input(text: str) -> str:
     return text.strip()
 
 def validate_coordinates(lat: float, lng: float) -> bool:
-    """Validate geographic coordinates."""
-    try:
-        LocationValidation(latitude=lat, longitude=lng)
-        return True
-    except ValueError:
-        return False
+    """Validate latitude and longitude coordinates."""
+    return -90 <= lat <= 90 and -180 <= lng <= 180
 
 def validate_ngo_data(data: Dict) -> Dict:
     """Validate NGO data and return cleaned version."""

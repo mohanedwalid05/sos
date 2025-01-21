@@ -2,18 +2,26 @@ FROM node:20-slim
 
 WORKDIR /app
 
-# Install dependencies
 COPY package*.json ./
-RUN npm install
 
-# Copy application code
+# Install dependencies based on NODE_ENV
+RUN if [ "$NODE_ENV" = "development" ] ; then \
+        npm install ; \
+    else \
+        npm ci ; \
+    fi
+
 COPY . .
 
-# Build the application
-RUN npm run build
+# Set default API URL for build if not provided
+ARG NEXT_PUBLIC_API_URL=http://backend:8000
+ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 
-# Expose port
+# Build if production
+RUN if [ "$NODE_ENV" = "production" ] ; then \
+        npm run build ; \
+    fi
+
 EXPOSE 3000
 
-# Command to run the application
 CMD ["npm", "start"] 
