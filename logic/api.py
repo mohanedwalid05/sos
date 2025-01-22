@@ -54,6 +54,14 @@ heatmap_generator = HeatmapGenerator()
 # WebSocket connections store
 active_connections: List[WebSocket] = []
 
+async def notify_clients(message: dict):
+    """Send update to all connected clients."""
+    for connection in active_connections:
+        try:
+            await connection.send_json(message)
+        except:
+            active_connections.remove(connection)
+
 # Pydantic models
 class Token(BaseModel):
     access_token: str
@@ -332,7 +340,7 @@ async def update_ngo(
         
     if updates.inventory_updates:
         for category, supplies in updates.inventory_updates.items():
-            if category in SupplyCategoryEnum.__members__:
+            if category in SupplyCategory.__members__:
                 ngo.inventory[category] = supplies
                 
     db.commit()
@@ -361,7 +369,7 @@ async def update_crisis_area(
         
     if updates.needs_updates:
         for category, amount in updates.needs_updates.items():
-            if category in SupplyCategoryEnum.__members__:
+            if category in SupplyCategory.__members__:
                 area.current_needs[category] = amount
                 
     if updates.weather_conditions:
@@ -381,4 +389,4 @@ async def update_crisis_area(
         "security_level": area.security_level
     })
     
-    return {"status": "success"} 
+    return {"status": "success"}

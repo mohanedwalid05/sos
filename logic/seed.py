@@ -41,14 +41,14 @@ def seed_database():
                 reach_radius_km=1000.0,
                 inventory={
                     SupplyCategory.FOOD.value: [
-                        {"quantity": 1000, "unit": "kg", "expiry_date": "2024-12-31"},
-                        {"quantity": 500, "unit": "kg", "expiry_date": "2024-06-30"}
+                        {"category": SupplyCategory.FOOD.value, "quantity": 1000, "unit": "kg", "expiry_date": "2024-12-31T23:59:59"},
+                        {"category": SupplyCategory.FOOD.value, "quantity": 500, "unit": "kg", "expiry_date": "2024-06-30T23:59:59"}
                     ],
                     SupplyCategory.WATER.value: [
-                        {"quantity": 5000, "unit": "liters", "expiry_date": None}
+                        {"category": SupplyCategory.WATER.value, "quantity": 5000, "unit": "liters", "expiry_date": None}
                     ],
                     SupplyCategory.MEDICAL.value: [
-                        {"quantity": 200, "unit": "boxes", "expiry_date": "2025-01-01"}
+                        {"category": SupplyCategory.MEDICAL.value, "quantity": 200, "unit": "boxes", "expiry_date": "2025-01-01T23:59:59"}
                     ]
                 },
                 replenishment_time_hours={
@@ -79,11 +79,11 @@ def seed_database():
                 reach_radius_km=800.0,
                 inventory={
                     SupplyCategory.MEDICAL.value: [
-                        {"quantity": 1000, "unit": "boxes", "expiry_date": "2024-12-31"},
-                        {"quantity": 500, "unit": "boxes", "expiry_date": "2024-06-30"}
+                        {"category": SupplyCategory.MEDICAL.value, "quantity": 1000, "unit": "boxes", "expiry_date": "2024-12-31T23:59:59"},
+                        {"category": SupplyCategory.MEDICAL.value, "quantity": 500, "unit": "boxes", "expiry_date": "2024-06-30T23:59:59"}
                     ],
                     SupplyCategory.HYGIENE.value: [
-                        {"quantity": 2000, "unit": "kits", "expiry_date": None}
+                        {"category": SupplyCategory.HYGIENE.value, "quantity": 2000, "unit": "kits", "expiry_date": None}
                     ]
                 },
                 replenishment_time_hours={
@@ -122,10 +122,10 @@ def seed_database():
                 population=50000,
                 current_inventory={
                     SupplyCategory.MEDICAL.value: [
-                        {"quantity": 100, "unit": "boxes", "expiry_date": "2024-03-01"}
+                        {"category": SupplyCategory.MEDICAL.value, "quantity": 100, "unit": "boxes", "expiry_date": "2024-03-01T23:59:59"}
                     ],
                     SupplyCategory.WATER.value: [
-                        {"quantity": 1000, "unit": "liters", "expiry_date": None}
+                        {"category": SupplyCategory.WATER.value, "quantity": 1000, "unit": "liters", "expiry_date": None}
                     ]
                 },
                 road_conditions="Partially blocked",
@@ -157,7 +157,7 @@ def seed_database():
                 population=75000,
                 current_inventory={
                     SupplyCategory.FOOD.value: [
-                        {"quantity": 500, "unit": "kg", "expiry_date": "2024-02-15"}
+                        {"category": SupplyCategory.FOOD.value, "quantity": 500, "unit": "kg", "expiry_date": "2024-02-15T23:59:59"}
                     ]
                 },
                 road_conditions="Dangerous",

@@ -28,7 +28,7 @@ class Settings:
     JWT_EXPIRY_HOURS: int = 24
     
     # Database settings
-    DATABASE_URL: str = "postgresql://postgres:postgres@localhost:5432/crisis_aid"
+    DATABASE_URL: str = "postgresql://postgres:postgres@db:5432/crisis_aid"
     
     # API settings
     CORS_ORIGINS: str = "http://localhost:3000"
